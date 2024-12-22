@@ -2,21 +2,18 @@
 name = "mooc-pdf-download"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
-# anyhow = "1.0.89"
 bytes = "1.9.0"
 cookie = "0.18.1"
 cookie_store = "0.21.1"
-# cookiestxt-rs = { version = "0.1.4", features = ["cookie", "cookie_store"] }
 dialoguer = "0.11.0"
 eyre = "0.6.12"
 futures = "0.3.31"
 indexmap = { version = "2.7.0", features = ["serde"] }
 indicatif = { version = "0.17.9", features = ["improved_unicode"] }
-# map-macro = "0.3.0"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = ["cookies", "multipart"] }
-# reqwest_cookie_store = "0.8.0"
 rookie = "0.5.6"
 tokio = { version = "1.42.0", features = ["fs", "macros", "rt-multi-thread"] }
