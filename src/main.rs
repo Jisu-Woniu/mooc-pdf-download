@@ -1,12 +1,14 @@
 use std::{
-    convert::AsRef,
+    convert::{AsRef, Infallible},
+    fmt::{Display, Formatter},
     path::Path,
+    str::FromStr,
     sync::{Arc, LazyLock},
     time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
-use dialoguer::Input;
+use dialoguer::{Input, Select};
 use eyre::OptionExt as _;
 use futures::future::join_all;
 use indexmap::indexmap;
@@ -16,7 +18,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, Url,
 };
-use rookie::{chrome, chromium, edge, enums::CookieToString as _, firefox};
+use rookie::{chrome, chromium, edge, enums::CookieToString as _, firefox, opera};
 use tokio::{
     fs::{create_dir_all, File},
     io::{AsyncWriteExt, BufWriter},
@@ -203,16 +205,18 @@ async fn download<P: AsRef<Path>, S: AsRef<str> + Sync>(
     Ok(())
 }
 
-fn set_cookies(cookie_source: &str, domain: &Url) -> eyre::Result<CookieJar> {
+fn set_cookies(cookie_source: CookieSource, domain: &Url) -> eyre::Result<CookieJar> {
     let cookie_string = match cookie_source {
-        "chrome" => chrome(Some(vec!["icourse163.org".to_string()]))?.to_string(),
-        "edge" => edge(Some(vec!["icourse163.org".to_string()]))?.to_string(),
-        "chromium" => chromium(Some(vec!["icourse163.org".to_string()]))?.to_string(),
-        "firefox" => firefox(Some(vec!["icourse163.org".to_string()]))?.to_string(),
-        // Safari is only available on macOS
+        CookieSource::Chrome => chrome(Some(vec!["icourse163.org".to_string()]))?.to_string(),
+        CookieSource::Edge => edge(Some(vec!["icourse163.org".to_string()]))?.to_string(),
+        CookieSource::Chromium => chromium(Some(vec!["icourse163.org".to_string()]))?.to_string(),
+        CookieSource::Firefox => firefox(Some(vec!["icourse163.org".to_string()]))?.to_string(),
+        CookieSource::Opera => opera(Some(vec!["icourse163.org".to_string()]))?.to_string(),
         #[cfg(target_os = "macos")]
-        "safari" => rookie::safari(Some(vec!["icourse163.org".to_string()]))?.to_string(),
-        _ => cookie_source.to_string(),
+        CookieSource::Safari => {
+            rookie::safari(Some(vec!["icourse163.org".to_string()]))?.to_string()
+        }
+        CookieSource::Custom(s) => s,
     };
 
     let cookie_jar = CookieJar::default();
@@ -222,18 +226,84 @@ fn set_cookies(cookie_source: &str, domain: &Url) -> eyre::Result<CookieJar> {
     Ok(cookie_jar)
 }
 
+#[derive(Debug, Clone)]
+enum CookieSource {
+    Chrome,
+    Edge,
+    Chromium,
+    Firefox,
+    Opera,
+    #[cfg(target_os = "macos")]
+    Safari,
+    Custom(String),
+}
+
+impl Display for CookieSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self))
+    }
+}
+
+impl FromStr for CookieSource {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Chrome" => Ok(Self::Chrome),
+            "Edge" => Ok(Self::Edge),
+            "Chromium" => Ok(Self::Chromium),
+            "Firefox" => Ok(Self::Firefox),
+            "Opera" => Ok(Self::Opera),
+            #[cfg(target_os = "macos")]
+            "Safari" => Ok(Self::Safari),
+            _ => Ok(Self::Custom(s.to_string())),
+        }
+    }
+}
+
+fn select_cookie_source() -> eyre::Result<CookieSource> {
+    const COOKIE_SOURCES_TEXT: &[&str] = &[
+        "Chrome",
+        "Edge",
+        "Chromium",
+        "Firefox",
+        "Opera",
+        #[cfg(target_os = "macos")]
+        "Safari",
+        "Custom",
+    ];
+    let cookie_source_selection = Select::new()
+        .with_prompt("Select the browser to use its cookies, or Custom to enter your own")
+        .items(COOKIE_SOURCES_TEXT)
+        .interact()?;
+
+    let mut cookie_source = COOKIE_SOURCES_TEXT[cookie_source_selection].parse()?;
+
+    if let CookieSource::Custom(..) = cookie_source {
+        cookie_source = CookieSource::Custom(
+            Input::new()
+                .with_prompt("Enter the cookies")
+                .interact_text()?,
+        );
+    }
+    Ok(cookie_source)
+}
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let tid: String = Input::new()
         .with_prompt("Enter the tid of course")
         .interact_text()?;
 
-    let cookie_source: String = Input::new()
-        .with_prompt("Enter the cookies")
-        .interact_text()?;
+    // let cookie_source: CookieSource = Input::new()
+    //     .with_prompt("Enter the cookies, or browser name to use its cookies")
+    //     .interact_text()?;
+
+    let cookie_source = select_cookie_source()?;
+
     let domain = Url::parse("https://www.icourse163.org").unwrap();
 
-    let cookie_store = Arc::new(set_cookies(&cookie_source, &domain)?);
+    let cookie_store = Arc::new(set_cookies(cookie_source, &domain)?);
 
     let session_id = cookie_store
         .get_session_id(&domain)
