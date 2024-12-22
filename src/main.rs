@@ -295,10 +295,6 @@ async fn main() -> eyre::Result<()> {
         .with_prompt("Enter the tid of course")
         .interact_text()?;
 
-    // let cookie_source: CookieSource = Input::new()
-    //     .with_prompt("Enter the cookies, or browser name to use its cookies")
-    //     .interact_text()?;
-
     let cookie_source = select_cookie_source()?;
 
     let domain = Url::parse("https://www.icourse163.org").unwrap();

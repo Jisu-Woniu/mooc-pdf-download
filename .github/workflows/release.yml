@@ -1,0 +1,58 @@
+name: publish
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+
+jobs:
+  publish:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - macos-latest
+          - ubuntu-20.04
+          - windows-latest
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Setup Rust toolchain
+        uses: moonrepo/setup-rust@v1
+        with:
+          channel: stable
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+      - name: Enable sccache
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      - name: Build Rust project (Release)
+        run: cargo build --release
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: target/release
+          name: release-artifacts-${{ matrix.platform }}
+      - name: Prepare Release Assets
+        id: prepare-release
+        shell: bash
+        run: |
+          if [ "$OSTYPE" = "msys" ] || [ "$OSTYPE" = "cygwin" ]; then binsuffix=".exe"; fi
+          binary="target/release/mooc-pdf-download-$(rustc --version --verbose | grep host | cut -d ' ' -f 2)$binsuffix"
+          ln "target/release/mooc-pdf-download$binsuffix" "$binary"
+          echo "binary=$binary" >> $GITHUB_OUTPUT
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.prepare-release.outputs.binary }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: "**Full changelog**: https://github.com/${{ github.repository }}/commits/v${{ github.ref }}"
+          draft: false
+          prerelease: ${{ startsWith(github.ref, 'v0') || contains(github.ref, '-') }}
