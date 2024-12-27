@@ -13,6 +13,7 @@ use eyre::OptionExt as _;
 use futures::future::join_all;
 use indexmap::indexmap;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use memchr::{memchr, memmem::find_iter};
 use regex::bytes::Regex;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
@@ -73,11 +74,19 @@ fn get_ids(course_info: &Bytes) -> Vec<(String, String)> {
     REGEX
         .captures_iter(course_info)
         .map(|cap| {
-            let ident = String::from_utf8_lossy(&cap[1]);
-            let content_id = String::from_utf8_lossy(&cap[2]);
-            let section_id_pattern = Regex::new(&format!(r"s{ident}\.id=([0-9]+);")).unwrap();
-            let capture = section_id_pattern.captures(course_info).unwrap();
-            let section_id = String::from_utf8_lossy(&capture[1]);
+            let (_, [ident, content_id]) = cap.extract();
+            let ident = String::from_utf8_lossy(ident);
+            let content_id = String::from_utf8_lossy(content_id);
+
+            let section_id = {
+                let section_id_pattern = format!("s{ident}.id=");
+
+                let pos = find_iter(course_info, &section_id_pattern).next().unwrap()
+                    + section_id_pattern.len();
+
+                let offset = memchr(b';', &course_info[pos..]).unwrap();
+                String::from_utf8_lossy(&course_info[pos..pos + offset])
+            };
 
             (content_id.into_owned(), section_id.into_owned())
         })
@@ -217,7 +226,6 @@ fn set_cookies(cookie_source: CookieSource, domain: &Url) -> eyre::Result<Cookie
     };
 
     let cookie_jar = CookieJar::default();
-
     cookie_jar.add_cookie_str(&cookie_string, domain);
 
     Ok(cookie_jar)
@@ -313,13 +321,7 @@ async fn main() -> eyre::Result<()> {
         multi_progress.add(ProgressBar::new_spinner().with_message("Fetching course info"));
     spinner.enable_steady_tick(Duration::from_millis(100));
     let course_info = get_course_info(&client, &session_id, &tid).await?;
-    #[cfg(debug_assertions)]
-    {
-        tokio::fs::write("course_info.js", &course_info).await?;
-    }
-
     spinner.set_message("Analyzing course info");
-
     let ids = get_ids(&course_info);
     spinner.finish_with_message("Fetching course info done");
 

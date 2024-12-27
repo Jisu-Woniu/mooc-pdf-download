@@ -41,21 +41,9 @@ impl CookieStore for CookieJar {
 }
 
 impl CookieJar {
-    /// Add a cookie to this jar.
+    /// Add cookies to this jar.
     ///
-    /// # Example
-    ///
-    /// ```
-    /// use reqwest::{cookie::Jar, Url};
-    ///
-    /// let cookie = "foo=bar; Domain=yolo.local";
-    /// let url = "https://yolo.local".parse::<Url>().unwrap();
-    ///
-    /// let jar = Jar::default();
-    /// jar.add_cookie_str(cookie, &url);
-    ///
-    /// // and now add to a `ClientBuilder`?
-    /// ```
+    /// Accepts a string of cookies as a `Cookie` header value.
     pub fn add_cookie_str(&self, cookie: &str, url: &Url) {
         let cookies = cookie::Cookie::split_parse(cookie)
             .filter_map(|c| c.ok())
