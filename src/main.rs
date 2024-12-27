@@ -33,9 +33,7 @@ mod query_string;
 
 fn headers() -> HeaderMap {
     let mut header = HeaderMap::new();
-
     header.insert("content-type", HeaderValue::from_static("text/plain"));
-
     header
 }
 
@@ -69,33 +67,32 @@ async fn get_course_info(client: &Client, session_id: &str, tid: &str) -> eyre::
     Ok(bytes)
 }
 
-fn get_content_ids(course_info: &Bytes) -> Vec<String> {
-    static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"contentId=([0-9]+);").unwrap());
-    REGEX
-        .captures_iter(course_info)
-        .map(|cap| String::from_utf8(cap[1].to_vec()).unwrap())
-        .collect()
-}
-
-fn get_ids(course_info: &Bytes) -> Vec<String> {
+fn get_ids(course_info: &Bytes) -> Vec<(String, String)> {
     static REGEX: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"id=([0-9]+);s[0-9]+\.jsonContent").unwrap());
+        LazyLock::new(|| Regex::new(r"s([0-9]+)\.contentId=([0-9]+);").unwrap());
     REGEX
         .captures_iter(course_info)
-        .map(|cap| String::from_utf8(cap[1].to_vec()).unwrap())
+        .map(|cap| {
+            let ident = String::from_utf8_lossy(&cap[1]);
+            let content_id = String::from_utf8_lossy(&cap[2]);
+            let section_id_pattern = Regex::new(&format!(r"s{ident}\.id=([0-9]+);")).unwrap();
+            let capture = section_id_pattern.captures(course_info).unwrap();
+            let section_id = String::from_utf8_lossy(&capture[1]);
+
+            (content_id.into_owned(), section_id.into_owned())
+        })
         .collect()
 }
 
 async fn get_pdf_urls<S: AsRef<str>>(
     client: &Client,
     session_id: &str,
-    content_ids: &[S],
-    section_ids: &[S],
+    ids: &[(S, S)],
 ) -> eyre::Result<Vec<String>> {
     static REGEX: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"textOrigUrl:"([^"]*\.pdf[^"]*)""#).unwrap());
     let (tx, mut rx) = mpsc::channel(5);
-    for (content_id, section_id) in content_ids.iter().zip(section_ids) {
+    for (content_id, section_id) in ids {
         let form = indexmap! {
             "callCount" => "1".to_string(),
             "scriptSessionId" => "${scriptSessionId}190".to_string(),
@@ -316,15 +313,19 @@ async fn main() -> eyre::Result<()> {
         multi_progress.add(ProgressBar::new_spinner().with_message("Fetching course info"));
     spinner.enable_steady_tick(Duration::from_millis(100));
     let course_info = get_course_info(&client, &session_id, &tid).await?;
+    #[cfg(debug_assertions)]
+    {
+        tokio::fs::write("course_info.js", &course_info).await?;
+    }
 
     spinner.set_message("Analyzing course info");
-    let content_ids = get_content_ids(&course_info);
-    let section_ids = get_ids(&course_info);
+
+    let ids = get_ids(&course_info);
     spinner.finish_with_message("Fetching course info done");
 
     let spinner = multi_progress.add(ProgressBar::new_spinner().with_message("Fetching PDF URLs"));
     spinner.enable_steady_tick(Duration::from_millis(100));
-    let urls = get_pdf_urls(&client, &session_id, &content_ids, &section_ids).await?;
+    let urls = get_pdf_urls(&client, &session_id, &ids).await?;
     spinner.finish_with_message("Fetching PDF URLs done");
 
     download(
