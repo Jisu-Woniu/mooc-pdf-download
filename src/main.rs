@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     convert::{AsRef, Infallible},
     fmt::{Display, Formatter},
     path::Path,
@@ -40,17 +41,19 @@ fn headers() -> HeaderMap {
 
 async fn get_course_info(client: &Client, session_id: &str, tid: &str) -> eyre::Result<Bytes> {
     let form = indexmap! {
-        "callCount" => "1".to_string(),
-        "scriptSessionId" => "${scriptSessionId}190".to_string(),
-        "httpSessionId" => session_id.to_string(),
-        "c0-scriptName" => "CourseBean".to_string(),
-        "c0-methodName" => "getLastLearnedMocTermDto".to_string(),
-        "c0-id" => "0".to_string(),
-        "c0-param0" => format!("number:{}", tid),
-        "batchId" => SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_millis()
-            .to_string(),
+        "callCount" => Cow::from("1"),
+        "scriptSessionId" => Cow::from("${scriptSessionId}190"),
+        "httpSessionId" => Cow::from(session_id),
+        "c0-scriptName" => Cow::from("CourseBean"),
+        "c0-methodName" => Cow::from("getLastLearnedMocTermDto"),
+        "c0-id" => Cow::from("0"),
+        "c0-param0" => Cow::from(format!("number:{}", tid)),
+        "batchId" => Cow::from(
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_millis()
+                .to_string(),
+        ),
     };
 
     let bytes = client
@@ -75,16 +78,19 @@ fn get_ids(course_info: &Bytes) -> Vec<(String, String)> {
         .captures_iter(course_info)
         .map(|cap| {
             let (_, [ident, content_id]) = cap.extract();
-            let ident = String::from_utf8_lossy(ident);
+            let n = String::from_utf8_lossy(ident);
             let content_id = String::from_utf8_lossy(content_id);
 
             let section_id = {
-                let section_id_pattern = format!("s{ident}.id=");
+                let section_id_pattern = format!("s{n}.id=");
 
-                let pos = find_iter(course_info, &section_id_pattern).next().unwrap()
+                let pos = find_iter(course_info, &section_id_pattern)
+                    .next()
+                    .expect("No section ID found")
                     + section_id_pattern.len();
 
-                let offset = memchr(b';', &course_info[pos..]).unwrap();
+                let haystack = &course_info[pos..];
+                let offset = memchr(b';', haystack).unwrap_or(haystack.len());
                 String::from_utf8_lossy(&course_info[pos..pos + offset])
             };
 
@@ -103,36 +109,35 @@ async fn get_pdf_urls<S: AsRef<str>>(
     let (tx, mut rx) = mpsc::channel(5);
     for (content_id, section_id) in ids {
         let form = indexmap! {
-            "callCount" => "1".to_string(),
-            "scriptSessionId" => "${scriptSessionId}190".to_string(),
-            "httpSessionId" => session_id.to_string(),
-            "c0-scriptName" => "CourseBean".to_string(),
-            "c0-methodName" => "getLessonUnitLearnVo".to_string(),
-            "c0-id" => "0".to_string(),
-            "c0-param0" => format!("number:{}", content_id.as_ref()),
-            "c0-param1" => "number:3".to_string(),
-            "c0-param2" => "number:0".to_string(),
-            "c0-param3" => format!("number:{}", section_id.as_ref()),
-            "batchId" => SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)?
-                .as_millis()
-                .to_string(),
+            "callCount" => Cow::from("1"),
+            "scriptSessionId" => Cow::from("${scriptSessionId}190"),
+            "httpSessionId" => Cow::from(session_id),
+            "c0-scriptName" => Cow::from("CourseBean"),
+            "c0-methodName" => Cow::from("getLessonUnitLearnVo"),
+            "c0-id" => Cow::from("0"),
+            "c0-param0" => Cow::from(format!("number:{}", content_id.as_ref())),
+            "c0-param1" => Cow::from("number:3"),
+            "c0-param2" => Cow::from("number:0"),
+            "c0-param3" => Cow::from(format!("number:{}", section_id.as_ref())),
+            "batchId" => Cow::from(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)?
+                    .as_millis()
+                    .to_string(),
+            ),
         };
 
         let client = client.clone();
         let tx = tx.clone();
 
+        let request = client
+            .post(
+                "https://www.icourse163.org/dwr/call/plaincall/CourseBean.getLessonUnitLearnVo.dwr",
+            )
+            .form(&form);
+
         spawn(async move {
-            let s = client
-                    .post(
-                        "https://www.icourse163.org/dwr/call/plaincall/CourseBean.getLessonUnitLearnVo.dwr",
-                    )
-                    .form(&form)
-                    .send()
-                    .await?
-                    .error_for_status()?
-                    .bytes()
-                    .await?;
+            let s = request.send().await?.error_for_status()?.bytes().await?;
 
             if let Some(url) = REGEX
                 .captures(&s)
@@ -143,7 +148,10 @@ async fn get_pdf_urls<S: AsRef<str>>(
             eyre::Ok(())
         });
     }
+
+    // There is still one copy of `tx`, and we need to drop it to close the channel.
     drop(tx);
+
     let mut urls = Vec::new();
 
     while let Some(url) = rx.recv().await {
@@ -174,7 +182,7 @@ async fn download<P: AsRef<Path>, S: AsRef<str> + Sync>(
                     .and_then(|capture| unquote_plus(&capture[1]).ok())
                     .expect("No filename found in URL");
                 let path = path.join(&file_name);
-                tokio::spawn(async move {
+                spawn(async move {
                     let mut response = client.get(&url).send().await?.error_for_status()?;
 
                     let mut file = BufWriter::new(File::create(path).await?);
@@ -296,7 +304,7 @@ fn select_cookie_source() -> eyre::Result<CookieSource> {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let tid: String = Input::new()
+    let tid = Input::<'_, String>::new()
         .with_prompt("Enter the tid of course")
         .interact_text()?;
 
