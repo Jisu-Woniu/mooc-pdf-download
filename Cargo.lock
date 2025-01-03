@@ -1556,6 +1556,7 @@ dependencies = [
  "indexmap",
  "indicatif",
  "memchr",
+ "rand",
  "regex",
  "reqwest",
  "rookie",

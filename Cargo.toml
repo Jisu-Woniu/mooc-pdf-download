@@ -14,6 +14,7 @@ futures = "0.3.31"
 indexmap = { version = "2.7.0", features = ["serde"] }
 indicatif = { version = "0.17.9", features = ["improved_unicode"] }
 memchr = "2.7.4"
+rand = "0.8.5"
 regex = "1.11.1"
 reqwest = { version = "0.12.12", features = ["cookies", "multipart"] }
 rookie = "0.5.6"
