@@ -38,9 +38,9 @@ jobs:
           echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
       - name: Run unit tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
       - name: Build Rust project (Debug)
-        run: cargo build
+        run: cargo build --locked
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
