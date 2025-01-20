@@ -11,7 +11,6 @@ use std::{
 use bytes::Bytes;
 use dialoguer::{Input, Select};
 use eyre::OptionExt as _;
-use futures::future::join_all;
 use indexmap::indexmap;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use memchr::{memchr, memmem::find_iter};
@@ -27,92 +26,14 @@ use tokio::{
     io::{AsyncWriteExt, BufWriter},
     spawn,
     sync::mpsc,
+    task::JoinSet,
 };
 
-use crate::{cookies::CookieJar, query_string::unquote_plus};
+use crate::{cookies::CookieJar, query_string::unquote_plus, user_agents::USER_AGENTS};
 
 mod cookies;
 mod query_string;
-
-// Replace it if you want to use another user agent.
-const USER_AGENTS: &[&str] = &[
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36 Hutool",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.6.5 Chrome/124.0.6367.243 Electron/30.1.2 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.4.14 Chrome/114.0.5735.289 Electron/25.8.1 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36",
-    "NetworkingExtension/8619.2.8.10.9 Network/4277.42.2 iOS/18.1.1",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 OPR/114.0.0.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
-    "Mozilla/5.0 (compatible; Cloudinary/1.0)",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.7.7 Chrome/128.0.6613.186 Electron/32.2.5 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.6.7 Chrome/124.0.6367.243 Electron/30.1.2 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.6.7 Chrome/124.0.6367.243 Electron/30.1.2 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.4.16 Chrome/114.0.5735.289 Electron/25.8.1 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.5938.132 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.6.5 Chrome/124.0.6367.243 Electron/30.1.2 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:130.0) Gecko/20100101 Firefox/130.0",
-    "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.4.16 Chrome/114.0.5735.289 Electron/25.8.1 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
-    "NetworkingExtension/8620.1.16.10.11 Network/4277.60.255 iOS/18.2",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/115.0.0.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.5.3 Chrome/114.0.5735.289 Electron/25.8.1 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "NetworkingExtension/8619.1.26.30.5 Network/4277.2.5 iOS/18.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.4.13 Chrome/114.0.5735.289 Electron/25.8.1 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) obsidian/1.5.12 Chrome/120.0.6099.283 Electron/28.2.3 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:128.0) Gecko/20100101 Firefox/128.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.1 Safari/605.1.15",
-];
+mod user_agents;
 
 fn headers() -> HeaderMap {
     let mut header = HeaderMap::new();
@@ -184,9 +105,7 @@ async fn get_pdf_urls<S: AsRef<str>>(
     client: &Client,
     session_id: &str,
     ids: &[(S, S)],
-) -> eyre::Result<Vec<String>> {
-    static REGEX: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"textOrigUrl:"([^"]*\.pdf[^"]*)""#).unwrap());
+) -> eyre::Result<Vec<Url>> {
     let (tx, mut rx) = mpsc::channel(5);
     for (content_id, section_id) in ids {
         let form = indexmap! {
@@ -220,6 +139,9 @@ async fn get_pdf_urls<S: AsRef<str>>(
         spawn(async move {
             let s = request.send().await?.error_for_status()?.bytes().await?;
 
+            static REGEX: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r#"textOrigUrl:"([^"]*\.pdf[^"]*)""#).unwrap());
+
             if let Some(url) = REGEX
                 .captures(&s)
                 .map(|cap| String::from_utf8_lossy(&cap[1]).into_owned())
@@ -236,65 +158,66 @@ async fn get_pdf_urls<S: AsRef<str>>(
     let mut urls = Vec::new();
 
     while let Some(url) = rx.recv().await {
-        urls.push(url);
+        urls.push(Url::parse(&url)?);
     }
     Ok(urls)
 }
 
-async fn download<P: AsRef<Path>, S: AsRef<str> + Sync>(
+async fn download<P: AsRef<Path>>(
     client: &Client,
-    urls: &[S],
+    urls: &[Url],
     path: P,
     multi_progress: &MultiProgress,
 ) -> eyre::Result<()> {
     let path = path.as_ref();
     create_dir_all(&path).await?;
+    let mut join_set = JoinSet::new();
     // Make sure all the URLs are downloaded concurrently until completion or error
-    let x = join_all(
-        urls.iter()
-            .map(move |url| {
-                let url = url.as_ref().to_string();
-                let client = client.clone();
-                let multi_progress = multi_progress.clone();
-                static REGEX: LazyLock<Regex> =
-                    LazyLock::new(|| Regex::new(r"[?&]download=([^&]*)").unwrap());
-                let file_name = REGEX
-                    .captures(url.as_bytes())
-                    .and_then(|capture| unquote_plus(&capture[1]).ok())
-                    .expect("No filename found in URL");
-                let path = path.join(&file_name);
-                spawn(async move {
-                    let mut response = client.get(&url).send().await?.error_for_status()?;
+    for url in urls {
+        let client = client.clone();
+        let multi_progress = multi_progress.clone();
+        let file_name = url
+            .query_pairs()
+            .find(|(k, _)| matches!(k.as_ref(), "download"))
+            .and_then(|(_, v)| unquote_plus(v.as_bytes()).ok())
+            .ok_or_eyre("No filename found in URL")?;
+        let path = path.join(&file_name);
+        let url = url.clone();
+        join_set.spawn(async move {
+            let mut response = client.get(url).send().await?.error_for_status()?;
 
-                    let mut file = BufWriter::new(File::create(path).await?);
+            let mut file = BufWriter::new(File::create(path).await?);
 
-                    let pb = response.content_length().map(|len| {
-                        multi_progress.add(
-                            ProgressBar::new(len).with_prefix(file_name).with_style(
-                                ProgressStyle::with_template(
-                                    "{prefix} {wide_bar} {binary_bytes}/{binary_total_bytes}",
-                                )
-                                .unwrap(),
-                            ),
+            let pb = response.content_length().map(|len| {
+                multi_progress.add(
+                    ProgressBar::new(len).with_prefix(file_name).with_style(
+                        ProgressStyle::with_template(
+                            "{prefix} {wide_bar} {binary_bytes}/{binary_total_bytes}",
                         )
-                    });
+                        .unwrap(),
+                    ),
+                )
+            });
 
-                    while let Some(chunk) = response.chunk().await? {
-                        if let Some(pb) = &pb {
-                            pb.inc(chunk.len() as u64);
-                        }
-                        file.write_all(&chunk).await?;
-                    }
+            while let Some(chunk) = response.chunk().await? {
+                if let Some(pb) = &pb {
+                    pb.inc(chunk.len() as u64);
+                }
+                file.write_all(&chunk).await?;
+            }
 
-                    eyre::Ok(())
-                })
-            })
-            .collect::<Vec<_>>(),
-    )
-    .await;
+            eyre::Ok(())
+        });
+    }
 
-    for res in x {
-        res??;
+    let mut errors = Vec::new();
+
+    while let Some(res) = join_set.join_next().await {
+        match res {
+            Ok(Err(e)) => errors.push(e),
+            Err(e) => errors.push(e.into()),
+            _ => {}
+        }
     }
 
     Ok(())
@@ -428,4 +351,14 @@ async fn main() -> eyre::Result<()> {
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use reqwest::Url;
+
+    #[test]
+    fn test() {
+        dbg!(Url::parse("https://duckduckgo.com/?t=ffab&q=url+parts&ia=web").unwrap());
+    }
 }

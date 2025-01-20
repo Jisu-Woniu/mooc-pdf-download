@@ -10,7 +10,6 @@ cookie = "0.18.1"
 cookie_store = "0.21.1"
 dialoguer = "0.11.0"
 eyre = "0.6.12"
-futures = "0.3.31"
 indexmap = { version = "2.7.1", features = ["serde"] }
 indicatif = { version = "0.17.9", features = ["improved_unicode"] }
 memchr = "2.7.4"
@@ -19,6 +18,9 @@ regex = "1.11.1"
 reqwest = { version = "0.12.12", features = ["cookies", "multipart"] }
 rookie = "0.5.6"
 tokio = { version = "1.43.0", features = ["fs", "macros", "rt-multi-thread"] }
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--generate-link-to-definition"]
 
 [profile.release]
 panic = "abort"
