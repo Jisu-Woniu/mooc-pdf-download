@@ -152,7 +152,7 @@ async fn get_pdf_urls<S: AsRef<str>>(
         });
     }
 
-    // There is still one copy of `tx`, and we need to drop it to close the channel.
+    // There is still one instance of `tx`, and we need to drop it to close the channel.
     drop(tx);
 
     let mut urls = Vec::new();
@@ -165,7 +165,7 @@ async fn get_pdf_urls<S: AsRef<str>>(
 
 async fn download<P: AsRef<Path>>(
     client: &Client,
-    urls: &[Url],
+    urls: impl IntoIterator<Item = Url>,
     path: P,
     multi_progress: &MultiProgress,
 ) -> eyre::Result<()> {
@@ -182,7 +182,7 @@ async fn download<P: AsRef<Path>>(
             .and_then(|(_, v)| unquote_plus(v.as_bytes()).ok())
             .ok_or_eyre("No filename found in URL")?;
         let path = path.join(&file_name);
-        let url = url.clone();
+
         join_set.spawn(async move {
             let mut response = client.get(url).send().await?.error_for_status()?;
 
@@ -344,7 +344,7 @@ async fn main() -> eyre::Result<()> {
 
     download(
         &client,
-        &urls,
+        urls,
         Path::new("download").join(tid),
         &multi_progress,
     )
