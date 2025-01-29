@@ -11,7 +11,7 @@ cookie_store = "0.21.1"
 dialoguer = "0.11.0"
 eyre = "0.6.12"
 indexmap = { version = "2.7.1", features = ["serde"] }
-indicatif = { version = "0.17.9", features = ["improved_unicode"] }
+indicatif = { version = "0.17.11", features = ["improved_unicode"] }
 memchr = "2.7.4"
 rand = "0.8.5"
 regex = "1.11.1"
