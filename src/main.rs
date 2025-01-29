@@ -14,7 +14,7 @@ use eyre::OptionExt as _;
 use indexmap::indexmap;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use memchr::{memchr, memmem::find_iter};
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{rng, seq::IndexedRandom as _};
 use regex::bytes::Regex;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
@@ -324,7 +324,7 @@ async fn main() -> eyre::Result<()> {
 
     let client = Client::builder()
         .cookie_provider(cookie_store)
-        .user_agent(*USER_AGENTS.choose(&mut thread_rng()).unwrap())
+        .user_agent(*USER_AGENTS.choose(&mut rng()).unwrap())
         .build()?;
 
     let multi_progress = MultiProgress::new();
