@@ -23,7 +23,7 @@ use reqwest::{
 use rookie::{chrome, chromium, edge, enums::CookieToString as _, firefox, opera};
 use tokio::{
     fs::{create_dir_all, File},
-    io::{AsyncWriteExt, BufWriter},
+    io::{AsyncWriteExt as _, BufWriter},
     spawn,
     sync::mpsc,
     task::JoinSet,
