@@ -17,7 +17,7 @@ rand = "0.9.0"
 regex = "1.11.1"
 reqwest = { version = "0.12.12", features = ["cookies", "multipart"] }
 rookie = "0.5.6"
-tokio = { version = "1.43.0", features = ["fs", "macros", "rt-multi-thread"] }
+tokio = { version = "1.44.0", features = ["fs", "macros", "rt-multi-thread"] }
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--generate-link-to-definition"]
