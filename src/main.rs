@@ -13,7 +13,7 @@ use dialoguer::{Input, Select};
 use eyre::OptionExt as _;
 use indexmap::indexmap;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use memchr::{memchr, memmem::find_iter};
+use memchr::{memchr, memmem::find};
 use rand::{rng, seq::IndexedRandom as _};
 use regex::bytes::Regex;
 use reqwest::{
@@ -84,11 +84,9 @@ fn get_ids(course_info: &Bytes) -> Vec<(String, String)> {
             let content_id = String::from_utf8_lossy(content_id);
 
             let section_id = {
-                let section_id_pattern = format!("s{n}.id=");
+                let section_id_pattern = format!("s{n}.id=").into_bytes();
 
-                let pos = find_iter(course_info, &section_id_pattern)
-                    .next()
-                    .expect("No section ID found")
+                let pos = find(course_info, &section_id_pattern).expect("No section ID found")
                     + section_id_pattern.len();
 
                 let haystack = &course_info[pos..];
