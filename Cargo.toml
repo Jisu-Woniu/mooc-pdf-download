@@ -15,7 +15,7 @@ indicatif = { version = "0.17.11", features = ["improved_unicode"] }
 memchr = "2.7.4"
 rand = "0.9.1"
 regex = "1.11.1"
-reqwest = { version = "0.12.15", features = ["cookies", "multipart"] }
+reqwest = { version = "0.12.16", features = ["cookies", "multipart"] }
 rookie = "0.5.6"
 tokio = { version = "1.45.1", features = ["fs", "macros", "rt-multi-thread"] }
 
