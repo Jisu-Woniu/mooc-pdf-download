@@ -23,7 +23,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Rust toolchain
         uses: moonrepo/setup-rust@v1
         with:
