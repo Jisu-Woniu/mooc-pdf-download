@@ -8,7 +8,7 @@ license = "MIT"
 bytes = "1.10.1"
 cookie = "0.18.1"
 cookie_store = "0.22.0"
-dialoguer = "0.11.0"
+dialoguer = "0.12.0"
 eyre = "0.6.12"
 indexmap = { version = "2.11.0", features = ["serde"] }
 indicatif = { version = "0.17.11", features = ["improved_unicode"] }
