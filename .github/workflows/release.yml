@@ -36,7 +36,7 @@ jobs:
       - name: Build Rust project (Release)
         run: cargo build --release --locked
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           path: target/release
           name: release-artifacts-${{ matrix.platform }}
