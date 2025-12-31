@@ -66,16 +66,17 @@ pub fn unquote_plus<S: AsRef<[u8]>>(s: S) -> Result<String, FromUtf8Error> {
 }
 
 fn to_digit(n1: u8, n2: u8) -> Option<u8> {
-    const DIGIT: &[u8] = b"0123456789ABCDEF";
-    let n1 = n1.to_ascii_uppercase();
-    let n2 = n2.to_ascii_uppercase();
+    Some(hex_char_to_dec(n1)? * 16 + hex_char_to_dec(n2)?)
+}
 
-    let mut byte: u8 = 0;
-    let n1 = DIGIT.binary_search(&n1).ok()?;
-    byte += n1 as u8 * 16;
-
-    let n2 = DIGIT.binary_search(&n2).ok()?;
-    byte += n2 as u8;
-
-    Some(byte)
+fn hex_char_to_dec(n: u8) -> Option<u8> {
+    Some(if n.is_ascii_digit() {
+        n - b'0'
+    } else if let b'A'..=b'F' = n {
+        n - b'A' + 10
+    } else if let b'a'..=b'f' = n {
+        n - b'a' + 10
+    } else {
+        None?
+    })
 }
