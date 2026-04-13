@@ -49,7 +49,7 @@ jobs:
           ln "target/release/mooc-pdf-download$binsuffix" "$binary"
           echo "binary=$binary" >> $GITHUB_OUTPUT
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ steps.prepare-release.outputs.binary }}
           token: ${{ secrets.GITHUB_TOKEN }}
