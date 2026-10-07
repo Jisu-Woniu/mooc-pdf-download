@@ -72,11 +72,20 @@ fn to_digit(n1: u8, n2: u8) -> Option<u8> {
 fn hex_char_to_dec(n: u8) -> Option<u8> {
     Some(if n.is_ascii_digit() {
         n - b'0'
-    } else if let b'A'..=b'F' = n {
-        n - b'A' + 10
-    } else if let b'a'..=b'f' = n {
-        n - b'a' + 10
     } else {
-        None?
+        // b'A' == 0b0100_0001 == 0x41
+        // b'F' == 0b0100_0110 == 0x46
+        // b'a' == 0b0110_0001 == 0x51
+        // b'a' == 0b0110_0110 == 0x56
+        if n & 0xD8 != 0x40 {
+            let ret = (n & 7) + 9;
+            if (10..16).contains(&ret) {
+                ret
+            } else {
+                None?
+            }
+        } else {
+            None?
+        }
     })
 }
