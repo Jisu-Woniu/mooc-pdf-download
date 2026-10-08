@@ -5,19 +5,19 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-bytes = "1.11.1"
-cookie = "0.18.1"
+bytes = "1.12.1"
+cookie = "0.18.2"
 cookie_store = "0.22.1"
 dialoguer = "0.12.0"
-eyre = "0.6.12"
-indexmap = { version = "2.14.0", features = ["serde"] }
-indicatif = { version = "0.18.4", features = ["improved_unicode"] }
-memchr = "2.8.1"
-rand = "0.10.1"
-regex = "1.12.4"
-reqwest = { version = "0.13.4", features = ["cookies", "form"] }
+eyre = "0.6.14"
+indexmap = { version = "2.14.2", features = ["serde"] }
+indicatif = { version = "0.18.6", features = ["improved_unicode"] }
+memchr = "2.8.3"
+rand = "0.10.3"
+regex = "1.13.1"
+reqwest = { version = "0.13.5", features = ["cookies", "form"] }
 rookie = "0.5.6"
-tokio = { version = "1.52.3", features = ["fs", "macros", "rt-multi-thread"] }
+tokio = { version = "1.53.2", features = ["fs", "macros", "rt-multi-thread"] }
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--generate-link-to-definition"]
